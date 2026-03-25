@@ -10,8 +10,18 @@ console.log("Starting WhatsApp AI Bot with Gemini...");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Use a stable and supported model
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+// Use a lite and fast model to save quota
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-lite-latest";
+
+// Simple cache for common greetings to save API quota
+const commonGreetings = {
+    'hi': 'Hello! E-Vision India WhatsApp Assistant me aapka swagat hai. Main aapki kaise madad kar sakta hoon? 😊',
+    'hello': 'Hello! Welcome to E-Vision India. Aapko CCTV cameras ya installation ke baare me kuch puchna hai?',
+    'hey': 'Hey there! How can I help you with our Smart Cameras today?',
+    'hy': 'Hello! E-Vision India me aapka swagat hai. Aapko ghar ke liye camera chahiye ya office ke liye?',
+    'hlo': 'Hello! Kaise hain aap? Main aapki CCTV requirements me kaise madad kar sakta hoon?',
+    'namaste': 'Namaste! E-Vision India me aapka swagat hai. Main aapki kaise madad kar sakta hoon?'
+};
 
 // Ye instructions Gemini AI ko batayengi ki usko kya bankar baat karni hai
 const botInstructions = `
@@ -136,7 +146,7 @@ const notifiedAway = new Set();
 const userProcessingLock = new Set();
 
 // Helper for exponential backoff retry logic
-async function sendMessageWithRetry(chat, text, maxRetries = 3) {
+async function sendMessageWithRetry(chat, text, maxRetries = 5) {
     let lastError;
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -144,10 +154,10 @@ async function sendMessageWithRetry(chat, text, maxRetries = 3) {
             return result.response.text();
         } catch (error) {
             lastError = error;
-            // 429 is Rate Limit error
+            // 429 is Rate Limit or Quota error
             if (error.status === 429) {
-                const waitTime = 5000 * (i + 1);
-                console.log(`⚠️ Rate limit hit. Retrying in ${waitTime/1000}s... (Attempt ${i + 1}/${maxRetries})`);
+                const waitTime = 10000 * (i + 1); // Start with 10s wait
+                console.log(`⚠️ Quota hit. Retrying in ${waitTime/1000}s... (Attempt ${i + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
             } else {
                 throw error;
@@ -181,12 +191,14 @@ client.on('message', async (message) => {
         return;
     }
 
-    // 2. Prevent concurrent processing for the same user (Double message guard)
-    if (userProcessingLock.has(sender)) {
-        console.log(`-> Still processing previous message for ${sender}. Skipping.`);
+    // 3. Quick Reply for common greetings (Saves API Quota)
+    const lowerText = text.toLowerCase().trim();
+    if (commonGreetings[lowerText]) {
+        console.log(`-> Using cached response for: ${lowerText}`);
+        await message.reply(commonGreetings[lowerText]);
+        userProcessingLock.delete(sender);
         return;
     }
-    userProcessingLock.add(sender);
 
     try {
         console.log("-> Thinking (Asking Gemini AI)...");
@@ -214,7 +226,7 @@ client.on('message', async (message) => {
         console.error("❌ Gemini Error:", error);
         // Provide user-friendly error message if still hitting limits after retries
         if (error.status === 429) {
-            await message.reply("Abhi bahot saare messages aa rahe hain. Thoda ruk kar try karein, hum aapke reply par kaam kar rahe hain! 🙏");
+            await message.reply("Maaf kijiyega, abhi messages ki limit khatam ho gayi hai. Hum thodi der me phir se online honge! 🙏");
         } else {
             await message.reply("Sorry, hamara AI server abhi thoda busy hai. Thodi der baad try karein.");
         }
