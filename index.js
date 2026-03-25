@@ -10,8 +10,14 @@ console.log("Starting WhatsApp AI Bot with Gemini...");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Use a lite and fast model to save quota
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-lite-latest";
+// Prioritized list of models to try (Fallback System)
+const MODEL_FALLBACK_LIST = [
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite-preview"
+];
 
 // Simple cache for common greetings to save API quota
 const commonGreetings = {
@@ -139,9 +145,6 @@ client.on('ready', () => {
 // har user ka chat history save karne ke liye
 const userSessions = new Map();
 
-// track users who have been notified of after-hours
-const notifiedAway = new Set();
-
 // track users currently being processed to prevent overlapping requests
 const userProcessingLock = new Set();
 
@@ -162,6 +165,42 @@ async function sendMessageWithRetry(chat, text, maxRetries = 5) {
             } else {
                 throw error;
             }
+        }
+    }
+    throw lastError;
+}
+
+// Helper to get Gemini response with automatic model fallback
+async function getGeminiResponseWithFallback(text, sender) {
+    let lastError;
+    
+    for (const modelName of MODEL_FALLBACK_LIST) {
+        try {
+            console.log(`-> Trying Gemini model: ${modelName}...`);
+            const model = genAI.getGenerativeModel({ 
+                model: modelName, 
+                systemInstruction: botInstructions 
+            });
+
+            // Start or retrieve chat session
+            let chat = userSessions.get(sender);
+            if (!chat) {
+                chat = model.startChat({ history: [] });
+                userSessions.set(sender, chat);
+            }
+
+            // Attempt to send message with retry logic
+            const responseText = await sendMessageWithRetry(chat, text);
+            return responseText;
+
+        } catch (error) {
+            console.warn(`⚠️ Model ${modelName} failed:`, error.message);
+            lastError = error;
+            // If it's not a quota/rate limit error, maybe try next model immediately
+            if (error.status !== 429 && error.status !== 503) {
+                continue; 
+            }
+            // For quota/busy errors, we might still want to try the next model
         }
     }
     throw lastError;
@@ -201,23 +240,9 @@ client.on('message', async (message) => {
     }
 
     try {
-        console.log("-> Thinking (Asking Gemini AI)...");
+        console.log("-> Thinking (Asking Gemini AI with Fallback)...");
         
-        // Gemini model ko call karna
-        const model = genAI.getGenerativeModel({ 
-            model: GEMINI_MODEL, 
-            systemInstruction: botInstructions 
-        });
-
-        // Nayi chat shuru karo agar user purana na ho
-        let chat = userSessions.get(sender);
-        if (!chat) {
-            chat = model.startChat({ history: [] });
-            userSessions.set(sender, chat);
-        }
-        
-        // Use retry logic to handle rate limits (429)
-        const responseText = await sendMessageWithRetry(chat, text);
+        const responseText = await getGeminiResponseWithFallback(text, sender);
 
         await message.reply(responseText);
         console.log("-> Sent Gemini AI response with memory!");
