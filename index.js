@@ -68,15 +68,18 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        executablePath: process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome-stable',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
+            '--disable-acceleration',
             '--disable-gpu',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-revocation-checking',
-            '--ignore-certificate-errors'
+            '--disable-extensions',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process', // Memory saving
+            '--disable-blink-features=AutomationControlled'
         ]
     }
 });
