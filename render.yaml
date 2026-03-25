@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: whatsapp-ai-bot
+    runtime: docker
+    plan: free
+    region: singapore
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: CHROME_PATH
+        value: /usr/bin/google-chrome-stable
+      - key: PORT
+        value: "3000"
+    autoDeploy: true
